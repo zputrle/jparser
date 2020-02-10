@@ -104,7 +104,7 @@ let return_error msg =
 let or_else parser1 parser2 =
   let _or_else input =
     match run parser1 input with
-    | Error _  -> run parser2 input
+    | Error _ -> run parser2 input
     | Success _ as sc -> sc
   in
     to_parser _or_else (parser1.label ^ " or " ^ parser2.label)
@@ -181,7 +181,19 @@ let map f parser =
 
 let (|>>) parser f = map f parser
 
-let one_of parsers = List.fold_right ( || ) parsers (return_error "None of the parsers applies.")
+(* let one_of parsers = List.fold_right ( || ) parsers (return_error "None of the parsers could be applied.") *)
+
+let one_of parsers =
+  let rec _one_of _parsers input =
+    match _parsers with
+    | [] -> Error ("one_of", "None of the parsers could be applied.", to_parser_position input)
+    | p::ps -> 
+      match run p input with
+      | Success _ as s -> s
+      | Error _ ->
+        (_one_of ps input)
+  in
+    to_parser (_one_of parsers) "one_of"
 
 let zero_or_more parser =
   let rec _zero_or_more input =
@@ -212,6 +224,18 @@ let one_or_more parser =
   - JSON convention explained: https://www.json.org/json-en.html
   - Writing a JSON parser from scratch: https://fsharpforfunandprofit.com/posts/understanding-parser-combinators-4/
 *)
+
+(* Internal representation of the JSON structure. *)
+type json_value =
+  | JNull
+  | JTrue
+  | JFalse
+  | JString of string
+  | JNumber of int
+  | JArray of json_value list
+  | JObject of (json_value * json_value) list
+
+(* TODO: Create a pretty printer for the json_value objects. *)
 
 let satisfy next predicate label =
   let _pred_pars input =
@@ -298,9 +322,11 @@ run p_space_sep_nums (to_input_state "12 34 56")
 
 ;;
 
-(* Array parsers. *)
+(* Sequence parser. *)
 
 let p_sequence parser delimiter =
+  let _ = print_endline "in p_sequence"
+  in
   (parser
   >> zero_or_more
     (p_spaces_if_available
@@ -317,45 +343,98 @@ run_and_print (p_sequence p_string ',') (to_input_state "\"abc\" , haha")
 
 ;;
 
-(* Object parser. *)
+(* Parser JSON values. *)
+
+let p_json_null =
+  (p_string_exactly "null" |>> fun _ -> JNull) ^> "JSON null value"
+
+let p_json_true =
+  (p_string_exactly "true" |>> fun _ -> JTrue) ^> "JSON true value"
+
+let p_json_false =
+  (p_string_exactly "false" |>> fun _ -> JFalse) ^> "JSON false value"
+
+let p_json_number =
+  (p_number |>> (fun i -> JNumber i)) ^> "JSON number"
 
 let p_json_string =
-  p_char '"' />> p_string >>/ p_char '"'
-
-(* TODO: Currently only numbers are supported as values. *)
-let p_json_name_value_pair =
-  p_json_string
-  >>/ p_spaces_if_available
-  >>/ p_char ':'
-  >>/ p_spaces_if_available
-  >> p_number
+  (p_char '"' />> p_string >>/ p_char '"' |>> fun s -> JString s) ^> "JSON string"
 
 ;;
 
-run p_json_string (to_input_state "\"aba\"") ;;
-run p_json_name_value_pair (to_input_state "\"m_var\" : 123")
+List.hd
+    [p_json_null;
+     p_json_true;
+     p_json_false;
+     p_json_number]
 
 ;;
 
-let p_json_object =
-  p_spaces_if_available
-  />> p_char '{'
-  />> p_spaces_if_available
-  />> p_json_name_value_pair
-  >> zero_or_more
-    (p_spaces_if_available
-     />> p_char ','
-     />> p_spaces_if_available
-     />> p_json_name_value_pair)
-  >>/ p_spaces_if_available
-  >>/ p_char '}'
-  |>> (fun (hd, tl) -> hd :: tl)
-  |> change_label "json object"
+let p_json_value = 
+  let rec _p_json_value input =
+    let p_json_array = to_parser _p_json_array "JSON array"
+    and p_json_object = to_parser _p_json_object "JSON object"
+    in
+      let p_json_value = one_of [
+        p_json_null;
+        p_json_true;
+        p_json_false;
+        p_json_number;
+        p_json_string;
+        p_json_array;
+        p_json_object]
+      in
+        run p_json_value input
+  and _p_json_array input =
+    let p_json_value = to_parser _p_json_value "JSON value"
+    in
+      let p_json_array =
+        p_char '['
+        />> p_spaces_if_available
+        />> (p_sequence p_json_value ',')
+        >>/ p_spaces_if_available
+        >>/ p_char ']'
+        >>/ p_spaces_if_available
+        |>> fun a -> JArray a
+    in
+      run p_json_array input
+and _p_json_object input =
+  let p_json_value = to_parser _p_json_value "JSON value"
+  in
+    let p_json_name_value_pair =
+      p_json_string
+      >>/ p_spaces_if_available
+      >>/ p_char ':'
+      >>/ p_spaces_if_available
+      >> p_json_value
+    in
+      let p_json_object =
+        p_spaces_if_available
+        />> p_char '{'
+        />> p_spaces_if_available
+        />> p_json_name_value_pair
+        >> zero_or_more
+          (p_spaces_if_available
+          />> p_char ','
+          />> p_spaces_if_available
+          />> p_json_name_value_pair)
+        >>/ p_spaces_if_available
+        >>/ p_char '}'
+        |>> (fun (hd, tl) -> hd :: tl)
+        |> change_label "json object"
+        |>> fun p -> JObject p 
+      in
+        run p_json_object input
+in
+  to_parser _p_json_value "JSON value" 
+
 ;;
 
-run_and_print p_json_object (to_input_state "
+run p_json_value (to_input_state "[10, 11, 13]");;
+
+run_and_print p_json_value (to_input_state "
   {
-    \"x\" : 1,,
-    \"y\" : 10
+    \"x\" : 1,
+    \"y\" : \"deset\"
   }
 ")
