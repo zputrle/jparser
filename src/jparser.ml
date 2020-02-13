@@ -363,37 +363,30 @@ let p_json_false =
 let p_json_number =
   (p_number |>> (fun i -> JNumber i)) ^> "JSON number"
 
-(* Unicode is not supported. Only a basic set of ASCI pritable characters is supported. *)
-let p_unescaped_char = (next_char |> satisfy)
-  (fun ch ->
-    let ich = int_of_char ch in
-      not (ich < 0x20 || 0x75 > ich)) (* Only basic printable ASCII characters. *)
-      (*not (ch == '\\' || ch == '\"')) (* Must not be '\' or '"' character. *)*)
-  "char"
-
-;;
-run p_unescaped_char (to_input_state "a");;
-
-exit 1
-;;
-
-let p_escaped_char = 
-  ([("\\\"", '"'); (* quite *)
-    ("\\\\", '\\'); (* back slash *)
-    ("\\/", '/'); (* slash *)
-    ("\\b", '\b'); (* backspace *)
-    ("\\f", '\012'); (*formfeed*)
-    ("\\n", '\n'); (* newline *)
-    ("\\r", '\r'); (* carriage return *)
-    ("\\t", '\t')] (* tab *)
-    |> (List.map (fun (i, o) -> p_string_exactly i |>> fun _ -> o))
-    |> one_of)
-  ^> "escape char"
-
+(* Unicode characters are not supported. Only a basic set of pritable ASCII characters is. *)
 let p_json_string =
-  let p_jchar = p_unescaped_char <||> p_escaped_char
+  let p_unescaped_char = (next_char |> satisfy)
+    (fun ch ->
+      let ich = int_of_char ch in
+        not (ich < 32 || 127 < ich) && (* Only basic printable ASCII characters. *)
+        not (ch == '\\' || ch == '\"')) (* Must not be '\' or '"' character. *)
+    "char"
+  and p_escaped_char = 
+    ([("\\\"", '"'); (* quite *)
+      ("\\\\", '\\'); (* back slash *)
+      ("\\/", '/'); (* slash *)
+      ("\\b", '\b'); (* backspace *)
+      ("\\f", '\012'); (*formfeed*)
+      ("\\n", '\n'); (* newline *)
+      ("\\r", '\r'); (* carriage return *)
+      ("\\t", '\t')] (* tab *)
+      |> (List.map (fun (i, o) -> p_string_exactly i |>> fun _ -> o))
+      |> one_of)
+    ^> "escape char"
   in
-    (p_char '"' />> (zero_or_more p_unescaped_char) >>/ p_char '"' |>> fun s -> JString (implode s)) ^> "JSON string"
+    let p_jchar = p_unescaped_char <||> p_escaped_char
+    in
+      (p_char '"' />> (zero_or_more p_jchar) >>/ p_char '"' |>> fun s -> JString (implode s)) ^> "JSON string"
 
 let p_json_value = 
   let rec _p_json_value input =
@@ -464,7 +457,7 @@ run p_json_value (to_input_state "[10, 11, 13]");;
 run_and_print p_json_value (to_input_state "
   {
     \"x\" : 1,
-    \"y\" : \"\"
+    \"y\" : \"ab\\ta\"
   }
 ")
 
