@@ -217,6 +217,12 @@ let one_or_more parser =
   in
     to_parser _one_or_more ("one or more " ^ parser.label)
 
+let optional parser =
+  let _parser = parser |>> fun s -> Some s
+  and _none = return None
+  in
+    _parser || _none
+
 (*
   JSON parser.
 
@@ -362,14 +368,6 @@ let p_json_string =
 
 ;;
 
-List.hd
-    [p_json_null;
-     p_json_true;
-     p_json_false;
-     p_json_number]
-
-;;
-
 let p_json_value = 
   let rec _p_json_value input =
     let p_json_array = to_parser _p_json_array "JSON array"
@@ -412,17 +410,21 @@ and _p_json_object input =
         p_spaces_if_available
         />> p_char '{'
         />> p_spaces_if_available
-        />> p_json_name_value_pair
-        >> zero_or_more
-          (p_spaces_if_available
-          />> p_char ','
-          />> p_spaces_if_available
-          />> p_json_name_value_pair)
+        />> optional (
+          p_json_name_value_pair
+          >> zero_or_more (
+            p_spaces_if_available
+            />> p_char ','
+            />> p_spaces_if_available
+            />> p_json_name_value_pair)
+            |>> fun (hd, tl) -> hd::tl)
         >>/ p_spaces_if_available
         >>/ p_char '}'
-        |>> (fun (hd, tl) -> hd :: tl)
-        |> change_label "json object"
-        |>> fun p -> JObject p 
+        ^> "json object"
+        |>> fun p -> 
+          match p with 
+          | None -> JObject []
+          | Some s -> JObject s
       in
         run p_json_object input
 in
@@ -438,3 +440,7 @@ run_and_print p_json_value (to_input_state "
     \"y\" : \"deset\"
   }
 ")
+
+;;
+
+run_and_print p_json_value (to_input_state "{}")
