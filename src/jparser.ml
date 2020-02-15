@@ -3,6 +3,10 @@
     https://fsharpforfunandprofit.com/series/understanding-parser-combinators.html
 *)
 
+(* Exceptions *)
+
+exception InvalidToken of string
+
 (* Helper functions. *)
 
 let explode str = List.init (String.length str) (String.get str)
@@ -10,6 +14,11 @@ let explode str = List.init (String.length str) (String.get str)
 let implode chrs = String.init (List.length chrs) (List.nth chrs)
 
 let to_string ch = String.make 1 ch
+
+let unwrap (Some ls:'a list option) : 'a list = ls
+let unwrap (None:'a list option) : 'a list = []
+let to_list (Some e:'a option) : 'a list = [e]
+let to_list (None:'a option) : 'a list = []
 
 (* Support for better error reporting. *)
 
@@ -148,7 +157,7 @@ let run_and_print parser input =
 
 let change_label new_label parser = {p_fun = parser.p_fun; label = new_label}
 
-let (^>) parser new_label = change_label new_label parser
+let (<?>) parser new_label = change_label new_label parser
 
 let (/>>) parser1 parser2 =
   parser1 >>= fun _ -> parser2
@@ -237,7 +246,7 @@ type json_value =
   | JTrue
   | JFalse
   | JString of string
-  | JNumber of int
+  | JNumber of float
   | JArray of json_value list
   | JObject of (json_value * json_value) list
 
@@ -284,7 +293,7 @@ let p_char ch =
 let p_string =
   let is_alpha = String.contains "_abcdefghijklmnopqrstvwuxyz"
   in
-    ((next_char |> satisfy) is_alpha "string" |> one_or_more |>> implode) ^> "string"
+    (next_char |> satisfy) is_alpha "string" |> one_or_more |>> implode <?> "string"
 
 let p_string_exactly str =
   explode str |> List.map p_char |> exactly |>> implode
@@ -333,35 +342,73 @@ run p_space_sep_nums (to_input_state "12 34 56")
 let p_sequence parser delimiter =
   let _ = print_endline "in p_sequence"
   in
-  (parser
+  parser
   >> zero_or_more
     (p_spaces_if_available
      />> (p_char delimiter)
      />> p_spaces_if_available
      />> parser)
-  |>> (fun (hd, tl) -> hd :: tl))
-  ^> "sequence of " ^ parser.label ^ "s"
+  |>> (fun (hd, tl) -> hd :: tl)
+  <?> "sequence of " ^ parser.label ^ "s"
 
 ;;
 
-run (p_sequence p_number ',') (to_input_state "12 ,32, 23");;
-run_and_print (p_sequence p_string ',') (to_input_state "\"abc\" , haha")
+run (p_sequence p_number ',') (to_input_state "12 ,32, 23")
+(* run_and_print (p_sequence p_string ',') (to_input_state "\"abc\" , haha") *)
 
 ;;
 
 (* Parser JSON values. *)
 
 let p_json_null =
-  (p_string_exactly "null" |>> fun _ -> JNull) ^> "JSON null value"
+  (p_string_exactly "null" |>> fun _ -> JNull) <?> "JSON null value"
 
 let p_json_true =
-  (p_string_exactly "true" |>> fun _ -> JTrue) ^> "JSON true value"
+  (p_string_exactly "true" |>> fun _ -> JTrue) <?> "JSON true value"
 
 let p_json_false =
-  (p_string_exactly "false" |>> fun _ -> JFalse) ^> "JSON false value"
+  (p_string_exactly "false" |>> fun _ -> JFalse) <?> "JSON false value"
 
 let p_json_number =
-  (p_number |>> (fun i -> JNumber i)) ^> "JSON number"
+  let p_digit = (next_char |> satisfy) (String.contains "0123456789") "digit" in
+  let p_digit_from_1_to_9 = (next_char |> satisfy) (String.contains "123456789") "digit" in
+  let p_prefix = p_char '-' in
+  let p_whole_number = 
+      let p_zero = (p_char '0') |>> (fun i -> [i])
+      and p_seq_of_digits = 
+        p_digit_from_1_to_9
+        >> zero_or_more p_digit
+        |>> fun (hd,tl) -> hd::tl
+      in
+        p_zero <||> p_seq_of_digits in
+  let p_decimal =
+      p_char '.'
+      >> one_or_more p_digit
+      |>> fun (hd,tl) -> hd::tl in
+  let p_exponent =
+    (p_char 'e' <||> p_char 'E')
+    >> optional (p_char '-' <||> p_char '+')
+    >> p_whole_number
+    |>> fun p ->
+      match p with
+      | ((_, None), tl) -> 'e'::tl
+      | ((_, Some '+'), tl) -> 'e'::tl
+      | ((_, Some '-'), tl) -> 'e'::'-'::tl
+      | ((_, Some ch), _) -> raise (InvalidToken ("Character not expected. char = '" ^ (to_string ch) ^ "'")) in
+  let to_float (((p, wn), d), e) = float_of_string (implode (p @ wn @ d @ e))
+  in
+    ((optional p_prefix) |>> to_list)
+    >> p_whole_number
+    >> (optional p_decimal |>> unwrap)
+    >> (optional p_exponent |>> unwrap)
+    |>> to_float |>> (fun v -> JNumber v)
+    <?> "JSON number"
+
+;;
+
+run p_json_number (to_input_state "10")
+
+;;
 
 (* Unicode characters are not supported. Only a basic set of pritable ASCII characters is. *)
 let p_json_string =
@@ -369,24 +416,26 @@ let p_json_string =
     (fun ch ->
       let ich = int_of_char ch in
         not (ich < 32 || 127 < ich) && (* Only basic printable ASCII characters. *)
-        not (ch == '\\' || ch == '\"')) (* Must not be '\' or '"' character. *)
+        not (ch == '\\' || ch == '\"')) (* Must not be '\' or '"'. *)
     "char"
   and p_escaped_char = 
-    ([("\\\"", '"'); (* quite *)
-      ("\\\\", '\\'); (* back slash *)
-      ("\\/", '/'); (* slash *)
-      ("\\b", '\b'); (* backspace *)
-      ("\\f", '\012'); (*formfeed*)
-      ("\\n", '\n'); (* newline *)
-      ("\\r", '\r'); (* carriage return *)
-      ("\\t", '\t')] (* tab *)
-      |> (List.map (fun (i, o) -> p_string_exactly i |>> fun _ -> o))
-      |> one_of)
-    ^> "escape char"
+    [("\\\"", '"'); (* quite *)
+     ("\\\\", '\\'); (* back slash *)
+     ("\\/", '/'); (* slash *)
+     ("\\b", '\b'); (* backspace *)
+     ("\\f", '\012'); (*formfeed*)
+     ("\\n", '\n'); (* newline *)
+     ("\\r", '\r'); (* carriage return *)
+     ("\\t", '\t')] (* tab *)
+    |> (List.map (fun (i, o) -> p_string_exactly i |>> fun _ -> o))
+    |> one_of
+    <?> "escape char"
   in
     let p_jchar = p_unescaped_char <||> p_escaped_char
     in
-      (p_char '"' />> (zero_or_more p_jchar) >>/ p_char '"' |>> fun s -> JString (implode s)) ^> "JSON string"
+      p_char '"' />> (zero_or_more p_jchar) >>/ p_char '"'
+      |>> (fun s -> JString (implode s))
+      <?> "JSON string"
 
 let p_json_value = 
   let rec _p_json_value input =
@@ -440,11 +489,11 @@ and _p_json_object input =
             |>> fun (hd, tl) -> hd::tl)
         >>/ p_spaces_if_available
         >>/ p_char '}'
-        ^> "json object"
-        |>> fun p -> 
+        |>> (fun p -> 
           match p with 
           | None -> JObject []
-          | Some s -> JObject s
+          | Some s -> JObject s)
+        <?> "json object"
       in
         run p_json_object input
 in
@@ -456,8 +505,7 @@ run p_json_value (to_input_state "[10, 11, 13]");;
 
 run_and_print p_json_value (to_input_state "
   {
-    \"x\" : 1,
-    \"y\" : \"ab\\ta\"
+    \"x\" : 1
   }
 ")
 
