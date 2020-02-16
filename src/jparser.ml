@@ -15,10 +15,15 @@ let implode chrs = String.init (List.length chrs) (List.nth chrs)
 
 let to_string ch = String.make 1 ch
 
-let unwrap (Some ls:'a list option) : 'a list = ls
-let unwrap (None:'a list option) : 'a list = []
-let to_list (Some e:'a option) : 'a list = [e]
-let to_list (None:'a option) : 'a list = []
+let unwrap ol =
+  match ol with
+  | Some l -> l
+  | None -> []
+
+let to_list oe =
+  match oe with
+  | Some e -> [e]
+  | None -> []
 
 (* Support for better error reporting. *)
 
@@ -190,19 +195,9 @@ let map f parser =
 
 let (|>>) parser f = map f parser
 
-(* let one_of parsers = List.fold_right ( || ) parsers (return_error "None of the parsers could be applied.") *)
-
 let one_of parsers =
-  let rec _one_of _parsers input =
-    match _parsers with
-    | [] -> Error ("one_of", "None of the parsers could be applied.", to_parser_position input)
-    | p::ps -> 
-      match run p input with
-      | Success _ as s -> s
-      | Error _ ->
-        (_one_of ps input)
-  in
-    to_parser (_one_of parsers) "one_of"
+  List.fold_right ( <||> ) parsers
+    (return_error "None of the parsers could be applied.")
 
 let zero_or_more parser =
   let rec _zero_or_more input =
@@ -232,6 +227,19 @@ let optional parser =
   in
     _parser <||> _none
 
+let satisfy next predicate label =
+  let _pred_pars input =
+    match (next input) with
+    | (None, in_st) ->
+        Error ("Expected " ^ label ^ ".", "EOF", to_parser_position in_st)
+    | (Some el, in_st) ->
+      if predicate el then
+        Success (el, in_st)
+      else
+        Error (label, "Expected " ^ label ^ ".", to_parser_position in_st)
+  in
+    to_parser _pred_pars label
+
 (*
   JSON parser.
 
@@ -252,24 +260,10 @@ type json_value =
 
 (* TODO: Create a pretty printer for the json_value objects. *)
 
-let satisfy next predicate label =
-  let _pred_pars input =
-    match (next input) with
-    | (None, in_st) ->
-        Error ("Expected " ^ label ^ ".", "EOF", to_parser_position in_st)
-    | (Some el, in_st) ->
-      if predicate el then
-        Success (el, in_st)
-      else
-        Error (label, "Expected " ^ label ^ ".", to_parser_position in_st)
-  in
-    to_parser _pred_pars label
-
 (* Space parsers. *)
 
 let p_space =
-  let
-    is_space = String.contains " \n\t\r"
+  let is_space = String.contains " \n\t\r"
   in
     (next_char |> satisfy) is_space "whitespace chracter"
 
@@ -280,7 +274,6 @@ let p_spaces_if_available =
   zero_or_more p_space
 
 ;;
-
 run p_spaces (to_input_state "   123")
 
 ;;
@@ -308,40 +301,19 @@ run (p_string_exactly "if") (to_input_state "irs")
 
 (* Number parsers. *)
 
-let parse_digit =
+let p_digit_from_1_to_9 =
+  let is_digit = String.contains "123456789"
+  in
+    (next_char |> satisfy) is_digit "digit"
+
+let p_digit =
   let is_digit = String.contains "0123456789"
   in
     (next_char |> satisfy) is_digit "digit"
 
-let p_number =
-  (one_or_more parse_digit)
-  |>> implode
-  |>> int_of_string
-
-let p_number_if_avaiable =
-  (zero_or_more parse_digit)
-  |>> implode
-  >>= 
-    fun hd -> 
-      if (String.length hd) = 0
-      then return []
-      else return ((int_of_string hd) :: [])
-let p_space_sep_nums = 
-  one_or_more (p_number >>/ p_spaces_if_available)
-
-;;
-
-run p_number_if_avaiable (to_input_state "123A");;
-
-run p_space_sep_nums (to_input_state "12 34 56")
-
-;;
-
 (* Sequence parser. *)
 
 let p_sequence parser delimiter =
-  let _ = print_endline "in p_sequence"
-  in
   parser
   >> zero_or_more
     (p_spaces_if_available
@@ -353,7 +325,7 @@ let p_sequence parser delimiter =
 
 ;;
 
-run (p_sequence p_number ',') (to_input_state "12 ,32, 23")
+run (p_sequence (one_or_more p_digit) ',') (to_input_state "12 ,32, 23")
 (* run_and_print (p_sequence p_string ',') (to_input_state "\"abc\" , haha") *)
 
 ;;
@@ -370,9 +342,9 @@ let p_json_false =
   (p_string_exactly "false" |>> fun _ -> JFalse) <?> "JSON false value"
 
 let p_json_number =
-  let p_digit = (next_char |> satisfy) (String.contains "0123456789") "digit" in
-  let p_digit_from_1_to_9 = (next_char |> satisfy) (String.contains "123456789") "digit" in
+
   let p_prefix = p_char '-' in
+
   let p_whole_number = 
       let p_zero = (p_char '0') |>> (fun i -> [i])
       and p_seq_of_digits = 
@@ -381,10 +353,12 @@ let p_json_number =
         |>> fun (hd,tl) -> hd::tl
       in
         p_zero <||> p_seq_of_digits in
+
   let p_decimal =
       p_char '.'
       >> one_or_more p_digit
       |>> fun (hd,tl) -> hd::tl in
+
   let p_exponent =
     (p_char 'e' <||> p_char 'E')
     >> optional (p_char '-' <||> p_char '+')
@@ -394,9 +368,13 @@ let p_json_number =
       | ((_, None), tl) -> 'e'::tl
       | ((_, Some '+'), tl) -> 'e'::tl
       | ((_, Some '-'), tl) -> 'e'::'-'::tl
-      | ((_, Some ch), _) -> raise (InvalidToken ("Character not expected. char = '" ^ (to_string ch) ^ "'")) in
-  let to_float (((p, wn), d), e) = float_of_string (implode (p @ wn @ d @ e))
-  in
+      | ((_, Some ch), _) ->
+        raise (InvalidToken
+          (Printf.sprintf "Character not expected. char = '%c'" ch)) in
+
+  let to_float (((p, wn), d), e) =
+    float_of_string (implode (p @ wn @ d @ e)) in
+
     ((optional p_prefix) |>> to_list)
     >> p_whole_number
     >> (optional p_decimal |>> unwrap)
@@ -406,7 +384,13 @@ let p_json_number =
 
 ;;
 
-run p_json_number (to_input_state "10")
+run p_json_number (to_input_state "10");;
+run p_json_number (to_input_state "12.20");;
+run p_json_number (to_input_state "222.1e-3");;
+
+run p_json_number (to_input_state "00.1");;
+
+exit 1
 
 ;;
 
@@ -437,7 +421,8 @@ let p_json_string =
       |>> (fun s -> JString (implode s))
       <?> "JSON string"
 
-let p_json_value = 
+let p_json_value =
+
   let rec _p_json_value input =
     let p_json_array = to_parser _p_json_array "JSON array"
     and p_json_object = to_parser _p_json_object "JSON object"
