@@ -1,15 +1,22 @@
 (*
-  The insiration for this parser is the following article:
-    https://fsharpforfunandprofit.com/series/understanding-parser-combinators.html
-*)
+ * Here you can find a "JSON-like parser" - a parser that is able to parser JSON
+ * format (https://www.json.org/json-en.html) but lacks support for Unicode
+ * characters.
+ *)
 
 open Combinators
 
-(* Exceptions *)
+(*
+ * Exceptions
+ *)
 
 exception InvalidToken of string
 
-(* Helper functions. *)
+exception UnexpectedError of string
+
+(*
+ * Helper functions.
+ *)
 
 let explode str = List.init (String.length str) (String.get str)
 
@@ -28,14 +35,9 @@ let to_list oe =
   | None -> []
 
 (*
-  JSON parser.
+ * Internal representation of the JSON structure.
+ *)
 
-  Additional resources:
-  - JSON convention explained: https://www.json.org/json-en.html
-  - Writing a JSON parser from scratch: https://fsharpforfunandprofit.com/posts/understanding-parser-combinators-4/
-*)
-
-(* Internal representation of the JSON structure. *)
 type json_value =
   | JNull
   | JTrue
@@ -44,8 +46,6 @@ type json_value =
   | JNumber of float
   | JArray of json_value list
   | JObject of (json_value * json_value) list
-
-(* TODO: Create a pretty printer for the json_value objects. *)
 
 (* Space parsers. *)
 
@@ -175,9 +175,7 @@ run p_json_number (to_input_state "10");;
 run p_json_number (to_input_state "12.20");;
 run p_json_number (to_input_state "222.1e-3");;
 
-run p_json_number (to_input_state "00.1");;
-
-exit 1
+run p_json_number (to_input_state "00.1")
 
 ;;
 
@@ -290,3 +288,67 @@ run_and_print p_json_value (to_input_state "
 ;;
 
 run_and_print p_json_value (to_input_state "{}")
+
+(* TODO: Cleanup pretty_print 
+ *
+ * When printing JNumbers, omit the decimal mark. 
+ *)
+
+let pretty_print jstruct =
+  let shift_right n = (String.init (n * 4) (fun _ -> ' ')) in
+  let rec _pretty_print depth jstruct =
+    match jstruct with
+    | JNull -> "null"
+    | JTrue -> "true"
+    | JFalse -> "false"
+    | JString s -> Printf.sprintf "\"%s\"" s
+    | JNumber f -> string_of_float f
+    | JArray a ->
+      "[" ^ (String.concat ", " (List.map (_pretty_print (depth + 1)) a)) ^ "]"
+    | JObject o ->
+      let sr_braces = shift_right depth
+      and sr_values = shift_right (depth + 1)
+      in
+        "\n" ^ sr_braces ^ "{\n" ^
+        sr_values ^
+          (String.concat
+            (",\n" ^ sr_values)
+            (List.map (fun (k,v) ->
+              (_pretty_print (depth + 1) k) ^ " : " ^
+              (_pretty_print (depth + 1) v))
+            o)) ^
+        "\n" ^ sr_braces ^ "}"
+  in
+    _pretty_print 0 jstruct
+
+let to_string rt =
+  match rt with
+  | Success (rs, inp) -> pretty_print rs
+  | Error (label, error, pp) ->
+    raise (UnexpectedError (construct_error_msg label error pp))
+
+;;
+
+print_endline (to_string (run p_json_value (to_input_state "[1, 2, 3, 4]")));;
+
+print_endline (to_string (run p_json_value (to_input_state
+  " {
+      \"x\" : 20.2,
+      \"y\" : \"Haha\"
+    } ")));;
+
+print_endline (to_string (run p_json_value (to_input_state
+  " {
+      \"x\" : 20.2,
+      \"y\" : \"Haha\",
+      \"nested\" : [
+        {
+          \"x\" : 20,
+          \"y\" : 201
+        },
+        {
+          \"x\" : 21,
+          \"y\" : true
+        }
+      ]
+    } ")));;
