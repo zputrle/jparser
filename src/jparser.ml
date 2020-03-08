@@ -477,7 +477,7 @@ let p_json_string =
       |>> (fun s -> JString (implode s))
       <?> "JSON string"
 
-let p_json_value =
+let p_json_object =
 
   let json_value_label = "JSON value"
   and json_array_label = "JSON array"
@@ -544,21 +544,26 @@ let p_json_value =
         in
           run p_json_object input
   in
-    to_parser _p_json_value "JSON value" 
+    to_parser _p_json_object "JSON object" 
 
 ;;
 
-run p_json_value (to_input_state "[10, 11, 13]");;
-
-run_and_print p_json_value (to_input_state "
+run_and_print p_json_object (to_input_state "
   {
     \"x\" : 1
   }
-")
+");;
+
+run_and_print p_json_object (to_input_state "
+  {
+    \"x\" : 1,
+    \"y\" : 20
+  }
+");;
+
+run_and_print p_json_object (to_input_state "{}")
 
 ;;
-
-run_and_print p_json_value (to_input_state "{}")
 
 (**
  * Pretty print the json structure.
@@ -597,20 +602,19 @@ let pretty_print jstruct =
 let to_string rt =
   match rt with
   | Success (rs, inp) -> pretty_print rs
-  | Error (label, error, pp) ->
-    raise (UnexpectedError (construct_error_msg label error pp))
+  | Error (label, error, pp) -> construct_error_msg label error pp
 
 ;;
 
-print_endline (to_string (run p_json_value (to_input_state "[1, 2, 3, 4]")));;
+print_endline (to_string (run p_json_object (to_input_state "[1, 2, 3, 4]")));;
 
-print_endline (to_string (run p_json_value (to_input_state
+print_endline (to_string (run p_json_object (to_input_state
   " {
       \"x\" : 20.2,
       \"y\" : \"Haha\"
     } ")));;
 
-print_endline (to_string (run p_json_value (to_input_state
+print_endline (to_string (run p_json_object (to_input_state
   " {
       \"x\" : 20.2,
       \"y\" : \"Haha\",

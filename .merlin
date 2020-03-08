@@ -1,2 +1,3 @@
+PKG OUnit
 S src
 B _build/src
