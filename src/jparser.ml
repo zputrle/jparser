@@ -174,8 +174,8 @@ let construct_error_msg label error_msg pp =
           (Printf.sprintf "%s\n" current_line) ^
           (Printf.sprintf ("%s^ %s\n") shift_right error_msg)
 
-(* Run parser*)
-let run_and_print parser input = 
+(* Run the parser and print error message to stdout if an error occurs. *)
+let run_and_print_error_msg parser input = 
   match run parser input with
   | Success _ as s -> s
   | Error (label, error_msg, pp) as e ->
@@ -316,7 +316,7 @@ type json_value =
   | JString of string
   | JNumber of float
   | JArray of json_value list
-  | JObject of (json_value * json_value) list
+  | JObject of (string * json_value) list
 
 (* Space parsers. *)
 
@@ -331,11 +331,6 @@ let p_spaces =
 let p_spaces_if_available =
   zero_or_more p_space
 
-;;
-run p_spaces (to_input_state "   123")
-
-;;
-
 (* String parsers. *)
 
 let p_char ch =
@@ -348,14 +343,6 @@ let p_string =
 
 let p_string_exactly str =
   explode str |> List.map p_char |> exactly |>> implode
-
-;;
-
-run p_string (to_input_state "m_var12") ;;
-
-run (p_string_exactly "if") (to_input_state "irs")
-
-;;
 
 (* Number parsers. *)
 
@@ -380,13 +367,6 @@ let p_sequence parser delimiter =
      />> parser)
   |>> (fun (hd, tl) -> hd :: tl)
   <?> "sequence of " ^ parser.label ^ "s"
-
-;;
-
-run (p_sequence (one_or_more p_digit) ',') (to_input_state "12 ,32, 23")
-(* run_and_print (p_sequence p_string ',') (to_input_state "\"abc\" , haha") *)
-
-;;
 
 (* Parser JSON values. *)
 
@@ -440,23 +420,10 @@ let p_json_number =
     |>> to_float |>> (fun v -> JNumber v)
     <?> "JSON number"
 
-;;
-
-run p_json_number (to_input_state "10");;
-run p_json_number (to_input_state "12.20");;
-run p_json_number (to_input_state "222.1e-3");;
-
-run p_json_number (to_input_state "00.1")
-
-;;
-
-(* Unicode characters are not supported. Only a basic set of pritable ASCII characters is. *)
-let p_json_string =
+(* Parse JSON string. *)
+let _p_json_string =
   let p_unescaped_char = (next_char |> satisfy)
-    (fun ch ->
-      let ich = int_of_char ch in
-        not (ich < 32 || 127 < ich) && (* Only basic printable ASCII characters. *)
-        not (ch == '\\' || ch == '\"')) (* Must not be '\' or '"'. *)
+    (fun ch -> not (ch == '\\' || ch == '\"')) (* Must not be '\' or '"'. *)
     "char"
   and p_escaped_char = 
     [("\\\"", '"'); (* quite *)
@@ -474,8 +441,12 @@ let p_json_string =
     let p_jchar = p_unescaped_char <||> p_escaped_char
     in
       p_char '"' />> (zero_or_more p_jchar) >>/ p_char '"'
-      |>> (fun s -> JString (implode s))
+      |>> implode
       <?> "JSON string"
+
+let p_json_string =
+    _p_json_string
+    |>> (fun s -> JString s)
 
 let p_json_object =
 
@@ -516,7 +487,7 @@ let p_json_object =
     let p_json_value = to_parser _p_json_value json_value_label
     in
       let p_json_name_value_pair =
-        p_json_string
+        _p_json_string
         >>/ p_spaces_if_available
         >>/ p_char ':'
         >>/ p_spaces_if_available
@@ -544,88 +515,12 @@ let p_json_object =
         in
           run p_json_object input
   in
-    to_parser _p_json_object "JSON object" 
+    to_parser _p_json_object "JSON object"
 
-;;
+(* Parse a JSON object. *)
+let parse_json_object json_string =
+    run p_json_object (to_input_state json_string)
 
-run_and_print p_json_object (to_input_state "
-  {
-    \"x\" : 1
-  }
-");;
-
-run_and_print p_json_object (to_input_state "
-  {
-    \"x\" : 1,
-    \"y\" : 20
-  }
-");;
-
-run_and_print p_json_object (to_input_state "{}")
-
-;;
-
-(**
- * Pretty print the json structure.
- *
- * TODO:
- * - Cleanup pretty printer.
- * - When printing JNumber, omit the decimal mark.
- *)
-let pretty_print jstruct =
-  let shift_right n = (String.init (n * 4) (fun _ -> ' ')) in
-  let rec _pretty_print depth jstruct =
-    match jstruct with
-    | JNull -> "null"
-    | JTrue -> "true"
-    | JFalse -> "false"
-    | JString s -> Printf.sprintf "\"%s\"" s
-    | JNumber f -> string_of_float f
-    | JArray a ->
-      "[" ^ (String.concat ", " (List.map (_pretty_print (depth + 1)) a)) ^ "]"
-    | JObject o ->
-      let sr_braces = shift_right depth
-      and sr_values = shift_right (depth + 1)
-      in
-        "\n" ^ sr_braces ^ "{\n" ^
-        sr_values ^
-          (String.concat
-            (",\n" ^ sr_values)
-            (List.map (fun (k,v) ->
-              (_pretty_print (depth + 1) k) ^ " : " ^
-              (_pretty_print (depth + 1) v))
-            o)) ^
-        "\n" ^ sr_braces ^ "}"
-  in
-    _pretty_print 0 jstruct
-
-let to_string rt =
-  match rt with
-  | Success (rs, inp) -> pretty_print rs
-  | Error (label, error, pp) -> construct_error_msg label error pp
-
-;;
-
-print_endline (to_string (run p_json_object (to_input_state "[1, 2, 3, 4]")));;
-
-print_endline (to_string (run p_json_object (to_input_state
-  " {
-      \"x\" : 20.2,
-      \"y\" : \"Haha\"
-    } ")));;
-
-print_endline (to_string (run p_json_object (to_input_state
-  " {
-      \"x\" : 20.2,
-      \"y\" : \"Haha\",
-      \"nested\" : [
-        {
-          \"x\" : 20,
-          \"y\" : 201
-        },
-        {
-          \"x\" : 21,
-          \"y\" : true
-        }
-      ]
-    } ")));;
+(* Parse a JSON object and print the error message if an error occured. *)
+let parse_json_object_and_print_error_msg json_string =
+    run_and_print_error_msg p_json_object (to_input_state json_string)

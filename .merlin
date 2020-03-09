@@ -1,3 +1,5 @@
 PKG OUnit
 S src
+S tests
+S utils
 B _build/src
