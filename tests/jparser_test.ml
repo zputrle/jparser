@@ -4,14 +4,11 @@ open Jparser
 
 (* Helper functions *)
 
-exception UnexpectedError of string
-
 (* Return parsed object. Otherwise, raise an exception.*)
 let return_jobject rt =
   match rt with
   | Success (rs, inp) -> rs
-  | Error (label, error, pp) ->
-    raise (UnexpectedError (construct_error_msg label error pp))
+  | Error (pl, pe, pp) -> raise (ParsingError (pl, pe, pp))
 
 let parse_with parser str =
   return_jobject (run parser (to_input_state str))
@@ -21,7 +18,7 @@ let parse_with parser str =
  * Return the parsed JObject if successful. Otherwise, raise an exception.
  *)
 let parse str =
-  return_jobject (parse_json_object str)
+  parse_json_object str
 
 (* Tests *)
 

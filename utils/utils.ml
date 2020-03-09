@@ -27,7 +27,7 @@ let pretty_print jstruct =
           (String.concat
             (",\n" ^ sr_values)
             (List.map (fun (k,v) ->
-              (_pretty_print (depth + 1) k) ^ " : " ^
+              (sr_values ^ k) ^ " : " ^
               (_pretty_print (depth + 1) v))
             o)) ^
         "\n" ^ sr_braces ^ "}"
@@ -38,29 +38,3 @@ let to_string rt =
   match rt with
   | Success (rs, inp) -> pretty_print rs
   | Error (label, error, pp) -> construct_error_msg label error pp
-
-;;
-
-print_endline (to_string (run p_json_object (to_input_state "[1, 2, 3, 4]")));;
-
-print_endline (to_string (run p_json_object (to_input_state
-  " {
-      \"x\" : 20.2,
-      \"y\" : \"Haha\"
-    } ")));;
-
-print_endline (to_string (run p_json_object (to_input_state
-  " {
-      \"x\" : 20.2,
-      \"y\" : \"Haha\",
-      \"nested\" : [
-        {
-          \"x\" : 20,
-          \"y\" : 201
-        },
-        {
-          \"x\" : 21,
-          \"y\" : true
-        }
-      ]
-    } ")));;

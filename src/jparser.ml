@@ -517,10 +517,11 @@ let p_json_object =
   in
     to_parser _p_json_object "JSON object"
 
-(* Parse a JSON object. *)
-let parse_json_object json_string =
-    run p_json_object (to_input_state json_string)
 
-(* Parse a JSON object and print the error message if an error occured. *)
-let parse_json_object_and_print_error_msg json_string =
-    run_and_print_error_msg p_json_object (to_input_state json_string)
+exception ParsingError of parser_label * parser_error * parser_position
+
+(* Parse a JSON object. *)
+let parse_json_object str =
+    match run p_json_object (to_input_state str) with
+    | Success (rs, input) -> rs
+    | Error (pl, pe, pp) -> raise (ParsingError (pl, pe, pp))
