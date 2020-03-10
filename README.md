@@ -6,7 +6,7 @@ This project is my attempt to work through a series of articles ["Understanding 
 
 ## How to use it
 
-You can find JParser in `src/jparser.ml`. The code is self contained and does not use any external dependencies (except for the OCaml's standard library). The parser only supports UTF-8 encoded string.
+You can find JParser in `src/jparser.ml`. The code is self contained and does not use any external dependencies (except for the OCaml's standard library). The parser only supports UTF-8 encoded strings.
 
 For an example on how to use JParser, see `examples/example.ml`. The example can be build by calling `make example`.
 
