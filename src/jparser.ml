@@ -1,5 +1,5 @@
 (*
- * Here you can find a simple JSON parser build with a combinatory parsing
+ * Here you can find a simple JSON parser built with a combinatory parsing
  * technique.
  *
  * First part of the file, contains a small library that can be used to building 
@@ -12,7 +12,7 @@
  * 
  * [1] https://fsharpforfunandprofit.com/posts/understanding-parser-combinators/
  *
- * The parser only supports UTF-8 encofing.
+ * The parser only supports UTF-8 encoding.
  *)
 
 (*
