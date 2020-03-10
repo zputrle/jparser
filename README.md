@@ -1,10 +1,23 @@
-# Diving into combinatiry parsing
+# JParser
 
-This project is my attempt to work through [The "Understanding Parser Combinators" series](https://fsharpforfunandprofit.com/posts/understanding-parser-combinators/) by Ken Lamug, to understand what combinatory parsing is, how it works and how it can be applied.
+**JParser** is a JSON parser build from scratch using a technique called combinatory parsing.
 
-As a result I have created a small JSON parser with a minimal error support contained in only one file.
+This project is my attempt to work through a series of articles ["Understanding Parser Combinators"](https://fsharpforfunandprofit.com/posts/understanding-parser-combinators/) written by **Ken Lamug**, and was created meanly for **educational purposes** - to experiment with the basic ideas of combinatory parsing. Therefore, while writing the code, I preferred readability over optimization and I em quite sure that I did not cover all the edge cases that come with trying to parse JSON formatted strings.
 
-## TODO
+## How to use it
 
-- Parser needs to fully suport JSON format.
-- Parser needs to start parsing with 'p_json_object'.
+You can find JParser in `src/jparser.ml`. The code is self contained and does not use any external dependencies (except for the OCaml's standard library). For an example on how to use JParser, see `examples/example.ml`. The example can be build by calling `make test`.
+
+``` bash
+$ make example
+ocamlbuild -I src -I utils examples/example.native
+Finished, 10 targets (10 cached) in 00:00:00.
+./example.native
+
+{
+        patient_name : "John Doe",
+        patient_id : "231143",
+        sex : "M",
+        age : 31.
+}
+```
