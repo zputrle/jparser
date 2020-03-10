@@ -42,8 +42,8 @@ let test_string_parsing _ =
 let test_sequence_parsing _ =
 
   assert_equal
-    ["ar"; "ha"; "ls"]
-    (parse_with (p_sequence p_string ',') "ar , ha, ls")
+    ['1'; '2'; '3']
+    (parse_with (p_sequence p_digit ',') "1 , 2, 3")
 
 let test_decimal_parsing _ =
 
@@ -58,6 +58,33 @@ let test_decimal_parsing _ =
   assert_equal
     (JNumber 0.2221)
     (parse_with p_json_number "222.1e-3")
+
+let test_JSON_string_parsing _ =
+    (* Test if a JSON string is parsed. *)
+
+    assert_equal
+      (JString "")
+      (parse_with p_json_string "\"\"");
+
+    assert_equal
+      (JString "abc")
+      (parse_with p_json_string "\"abc\"");
+
+    assert_equal
+      (JString "\\u0123")
+      (parse_with p_json_string "\"\\u0123\"");
+
+    assert_equal
+      (JString "a\\u0123")
+      (parse_with p_json_string "\"a\\u0123\"");
+
+    assert_equal
+      (JString "a\\u0123aba")
+      (parse_with p_json_string "\"a\\u0123aba\"");
+
+    assert_equal
+      (JString "a\\u0123\\uFFF0aba")
+      (parse_with p_json_string "\"a\\u0123\\uFFF0aba\"")
 
 let test_empty_object_parsing _ = 
     (* Test if an empty object is parsed. *)
@@ -166,6 +193,7 @@ let suite =
     "test_string_parsing" >:: test_string_parsing;
     "test_sequence_parsing" >:: test_sequence_parsing;
     "test_decimal_parsing" >:: test_decimal_parsing;
+    "test_JSON_string_parsing" >:: test_JSON_string_parsing;
     "test_empty_object_parsing" >:: test_empty_object_parsing;
     "test_simple_object_parsing" >:: test_simple_object_parsing;
     "test_nested_object_parsing" >:: test_nested_object_parsing;

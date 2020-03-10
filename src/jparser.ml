@@ -1,15 +1,18 @@
 (*
- * Here you can find a simple JSON parser build with a technique called
- * 'combinatory parsing'.
+ * Here you can find a simple JSON parser build with a combinatory parsing
+ * technique.
  *
- * First part of the file contains building blocks that can be used to build
- * parsers in general. Where following is a small JSON parser build upon those
- * blocks with a minimal support for error reporting.
+ * First part of the file, contains a small library that can be used to building 
+ * parsers in general. Where following is a demonstration of how a JSON  
+ * parser with a basic support for error reporting can be build using that
+ * library.
  *
- * This is my attempt to work through the following [1] article written by Ken
- * Lamug.
+ * This is my attempt to work through "Understanding parser combinations" [1] -
+ * an article series written by Ken Lamug.
  * 
  * [1] https://fsharpforfunandprofit.com/posts/understanding-parser-combinators/
+ *
+ * The parser only supports UTF-8 encofing.
  *)
 
 (*
@@ -336,11 +339,6 @@ let p_spaces_if_available =
 let p_char ch =
   (next_char |> satisfy) (fun ich -> ich == ch) ("char '" ^ to_string ch ^ "'")
 
-let p_string =
-  let is_alpha = String.contains "_abcdefghijklmnopqrstvwuxyz"
-  in
-    (next_char |> satisfy) is_alpha "string" |> one_or_more |>> implode <?> "string"
-
 let p_string_exactly str =
   explode str |> List.map p_char |> exactly |>> implode
 
@@ -355,6 +353,11 @@ let p_digit =
   let is_digit = String.contains "0123456789"
   in
     (next_char |> satisfy) is_digit "digit"
+
+let p_hexadecimal_char =
+  let is_digit = String.contains "abcdefABCDEF0123456789"
+  in
+    (next_char |> satisfy) is_digit "hexadecimal char"
 
 (* Sequence parser. *)
 
@@ -422,9 +425,11 @@ let p_json_number =
 
 (* Parse JSON string. *)
 let _p_json_string =
+
   let p_unescaped_char = (next_char |> satisfy)
     (fun ch -> not (ch == '\\' || ch == '\"')) (* Must not be '\' or '"'. *)
     "char"
+
   and p_escaped_char = 
     [("\\\"", '"'); (* quite *)
      ("\\\\", '\\'); (* back slash *)
@@ -437,11 +442,27 @@ let _p_json_string =
     |> (List.map (fun (i, o) -> p_string_exactly i |>> fun _ -> o))
     |> one_of
     <?> "escape char"
+  
+  and p_unicode_char =
+    p_char '\\'
+    >> p_char 'u'
+    >> p_hexadecimal_char
+    >> p_hexadecimal_char
+    >> p_hexadecimal_char
+    >> p_hexadecimal_char
+    |>> (fun (((((a, b), c), d), e), f) -> a::b::c::d::e::f::[])
+    |>> implode
+
   in
     let p_jchar = p_unescaped_char <||> p_escaped_char
     in
-      p_char '"' />> (zero_or_more p_jchar) >>/ p_char '"'
-      |>> implode
+      p_char '"'
+      />>
+        zero_or_more 
+          ((one_or_more p_jchar |>> implode) 
+          <||> p_unicode_char)
+      >>/ p_char '"'
+      |>> String.concat ""
       <?> "JSON string"
 
 let p_json_string =
