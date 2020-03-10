@@ -442,7 +442,7 @@ let _p_json_string =
     |> (List.map (fun (i, o) -> p_string_exactly i |>> fun _ -> o))
     |> one_of
     <?> "escape char"
-  
+
   and p_unicode_char =
     p_char '\\'
     >> p_char 'u'
@@ -458,8 +458,8 @@ let _p_json_string =
     in
       p_char '"'
       />>
-        zero_or_more 
-          ((one_or_more p_jchar |>> implode) 
+        zero_or_more (
+          (one_or_more p_jchar |>> implode) 
           <||> p_unicode_char)
       >>/ p_char '"'
       |>> String.concat ""

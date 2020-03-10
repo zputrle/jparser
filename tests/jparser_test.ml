@@ -2,21 +2,27 @@ open OUnit2
 
 open Jparser
 
+exception ExpectedSuccess of parser_label * parser_error * parser_position
+exception ExpectedError of json_value * input_state
+
 (* Helper functions *)
 
-(* Return parsed object. Otherwise, raise an exception.*)
 let return_jobject rt =
   match rt with
   | Success (rs, inp) -> rs
-  | Error (pl, pe, pp) -> raise (ParsingError (pl, pe, pp))
+  | Error (pl, pe, pp) -> raise (ExpectedSuccess (pl, pe, pp))
+
+let return_error rt =
+  match rt with
+  | Success (rs, inp) -> raise (ExpectedError (rs, inp))
+  | Error (pl, pe, pp) -> (pl, pe, pp)
 
 let parse_with parser str =
   return_jobject (run parser (to_input_state str))
 
-(* Parse a JSON object.
- *
- * Return the parsed JObject if successful. Otherwise, raise an exception.
- *)
+let parse_with_and_return_error parser str =
+  return_error (run parser (to_input_state str))
+
 let parse str =
   parse_json_object str
 
@@ -69,6 +75,10 @@ let test_JSON_string_parsing _ =
     assert_equal
       (JString "abc")
       (parse_with p_json_string "\"abc\"");
+
+    let (pl, pe, pp) = (parse_with_and_return_error p_json_string "\"a\\yc\"")
+    in
+      assert_equal "Expected char '\"'." pe;
 
     assert_equal
       (JString "\\u0123")
