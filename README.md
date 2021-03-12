@@ -4,7 +4,7 @@
 
 This project is my attempt to work through a series of articles ["Understanding Parser Combinators"](https://fsharpforfunandprofit.com/posts/understanding-parser-combinators/) written by **Scott Wlaschin**, and was created mainly for me to _experiment_ with the basic ideas of combinatory parsing. Therefore, while writing the code, I preferred readability over optimization and I am sure that I did not cover all the edge cases that come with trying to build a full-blown JSON parser.
 
-## How to use it
+## How to use
 
 You can find JParser in `src/jparser.ml`. The code is self-contained and does not use any external dependencies (except for the OCaml's standard library). The parser only supports UTF-8 encoded strings.
 
